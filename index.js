@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 
 const API_KEY = process.env.GEMINI_API_KEY;
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const MAX_NEWS_PER_SOURCE = 10;
 const REQUEST_TIMEOUT_MS = 20000;
 const GEMINI_TIMEOUT_MS = 60000;
