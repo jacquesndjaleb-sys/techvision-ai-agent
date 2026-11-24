@@ -5,6 +5,7 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const MAX_NEWS_PER_SOURCE = 10;
 const REQUEST_TIMEOUT_MS = 20000;
 const GEMINI_TIMEOUT_MS = 60000;
+const FACEBOOK_API_VERSION = "v27.0";
 
 const SOURCES = [
   "https://feeds.bbci.co.uk/news/technology/rss.xml",
@@ -192,6 +193,60 @@ Retourne uniquement la publication finale, sans expliquer ton raisonnement.`
   throw new Error("Toutes les tentatives Gemini ont échoué.");
 }
 
+async function publishToFacebook(publication) {
+  if (process.env.FACEBOOK_AUTO_PUBLISH !== "true") {
+    console.log("Publication Facebook désactivée : le contenu reste enregistré en brouillon.");
+    return null;
+  }
+
+  if (publication.startsWith("PUBLICATION BLOQUÉE :")) {
+    console.log("Publication Facebook annulée : les informations doivent être vérifiées.");
+    return null;
+  }
+
+  const pageId = process.env.FB_PAGE_ID;
+  const pageAccessToken = process.env.FB_PAGE_ACCESS_TOKEN;
+
+  if (!pageId || !pageAccessToken) {
+    throw new Error("Configuration Facebook incomplète : ajoute FB_PAGE_ID et FB_PAGE_ACCESS_TOKEN dans les secrets GitHub.");
+  }
+
+  const body = new URLSearchParams({
+    message: publication,
+    access_token: pageAccessToken
+  });
+
+  const response = await fetch(
+    `https://graph.facebook.com/${FACEBOOK_API_VERSION}/${encodeURIComponent(pageId)}/feed`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    }
+  );
+
+  const responseText = await response.text();
+  let data;
+
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Réponse Facebook illisible (HTTP ${response.status}).`);
+  }
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error?.message || `Erreur Facebook HTTP ${response.status}.`);
+  }
+
+  if (!data.id) {
+    throw new Error("Facebook n'a pas confirmé la création de la publication.");
+  }
+
+  console.log(`Publication envoyée sur Facebook. Identifiant : ${data.id}`);
+  return data.id;
+}
+
 async function main() {
   console.log("======================================");
   console.log("TECHVISION AI AGENT");
@@ -221,6 +276,9 @@ async function main() {
 
   console.log("\nÉtape 3 : Enregistrement de la publication...");
   fs.writeFileSync("publication.md", `${publication}\n`, "utf8");
+
+  console.log("\nÉtape 4 : Publication Facebook...");
+  await publishToFacebook(publication);
 
   console.log("\n======================================");
   console.log("PUBLICATION PRÉPARÉE");
