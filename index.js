@@ -1,263 +1,230 @@
-const fs = require("fs");
+const fs = require("node:fs");
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const MAX_NEWS_PER_SOURCE = 10;
+const REQUEST_TIMEOUT_MS = 20000;
+const GEMINI_TIMEOUT_MS = 60000;
 
 const SOURCES = [
-"https://feeds.bbci.co.uk/news/technology/rss.xml",
-"https://www.theverge.com/rss/index.xml"
+  "https://feeds.bbci.co.uk/news/technology/rss.xml",
+  "https://www.theverge.com/rss/index.xml"
 ];
 
-// Fonction pour nettoyer le texte récupéré dans les flux RSS
-function cleanText(text) {
-return text
-.replace(/<![CDATA[([\s\S]?)]]>/g, "$1")
-.replace(/<[^>]>/g, "")
-.replace(/&/g, "&")
-.replace(/"/g, '"')
-.replace(/'/g, "'")
-.replace(/</g, "<")
-.replace(/>/g, ">")
-.trim();
+// Décode les principales entités HTML présentes dans les flux RSS.
+function decodeEntities(value) {
+  return value
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
-// Récupération des actualités
+// Nettoie le HTML et les CDATA sans conserver les balises.
+function cleanText(value = "") {
+  return decodeEntities(
+    String(value)
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+  ).trim();
+}
+
+// Extrait le contenu d'une balise XML, y compris lorsqu'elle contient une CDATA.
+function extractTag(xml, tagName) {
+  const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const expression = new RegExp(
+    `<${escapedTag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapedTag}\\s*>`,
+    "i"
+  );
+  const match = xml.match(expression);
+  return match ? cleanText(match[1]) : "";
+}
+
 async function getNews(url) {
-try {
-console.log("Lecture de la source : ${url}");
+  try {
+    console.log(`Lecture de la source : ${url}`);
 
-const response = await fetch(url, {
-  headers: {
-    "User-Agent": "TechVisionAIAgent/1.0"
-  },
-  signal: AbortSignal.timeout(20000)
-});
+    const response = await fetch(url, {
+      headers: { "User-Agent": "TechVisionAIAgent/1.0" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    });
 
-if (!response.ok) {
-  throw new Error(`Erreur HTTP ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`Erreur HTTP ${response.status}`);
+    }
+
+    const xml = await response.text();
+    const items = [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)];
+
+    const news = items.slice(0, MAX_NEWS_PER_SOURCE).map(({ 1: item }) => ({
+      title: extractTag(item, "title"),
+      link: extractTag(item, "link"),
+      description: extractTag(item, "description") || extractTag(item, "content:encoded"),
+      date: extractTag(item, "pubDate")
+    })).filter(item => item.title && /^https?:\/\//i.test(item.link));
+
+    console.log(`${news.length} actualités récupérées depuis cette source.`);
+    return news;
+  } catch (error) {
+    console.error(`Source inaccessible (${url}) : ${error.message}`);
+    return [];
+  }
 }
 
-const xml = await response.text();
-
-const items = [
-  ...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)
-];
-
-const news = items.slice(0, 10).map(match => {
-  const item = match[1];
-
-  const extract = tag => {
-    const result = item.match(
-      new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i")
-    );
-
-    return result ? cleanText(result[1]) : "";
-  };
-
-  return {
-    title: extract("title"),
-    link: extract("link"),
-    description: extract("description"),
-    date: extract("pubDate")
-  };
-}).filter(item => item.title && item.link);
-
-console.log(`${news.length} actualités récupérées depuis cette source.`);
-
-return news;
-
-} catch (error) {
-console.error("Source inaccessible :", url);
-console.error("Détail :", error.message);
-
-return [];
-
-}
+function isRetryable(error) {
+  return [408, 429, 500, 502, 503, 504].includes(error.status) ||
+    error.name === "TimeoutError" || error.name === "AbortError" ||
+    error.name === "TypeError";
 }
 
-// Génération de la publication avec Gemini
 async function generatePublication(news) {
-const maxAttempts = 3;
+  const maxAttempts = 3;
 
-for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-try {
-console.log("Tentative Gemini ${attempt}/${maxAttempts}...");
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(`Tentative Gemini ${attempt}/${maxAttempts}...`);
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-    {
-      method: "POST",
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": API_KEY
+          },
+          body: JSON.stringify({
+            contents: [{
+              role: "user",
+              parts: [{
+                text: `Tu es le rédacteur en chef d'une page Facebook spécialisée dans la technologie, l'informatique, l'intelligence artificielle et les innovations numériques.
 
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": API_KEY
-      },
-
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: `
-
-Tu es le rédacteur en chef d'une page Facebook spécialisée dans la technologie, l'informatique, l'intelligence artificielle et les innovations numériques.
-
-Voici les actualités disponibles :
+ACTUALITÉS DISPONIBLES :
 ${JSON.stringify(news, null, 2)}
 
 MISSION :
+1. Analyse les actualités et choisis un sujet intéressant et récent.
+2. Appuie-toi uniquement sur les informations fournies. N'invente aucun fait.
+3. Rédige en français naturel, clair et facile à comprendre.
+4. Commence par un titre accrocheur.
+5. Explique l'information de manière concise, avec un ton journalistique.
+6. Termine par une question pertinente pour les lecteurs.
+7. Ajoute quelques hashtags adaptés.
+8. Indique la source et son lien exact.
 
-1. Analyse les actualités disponibles.
-2. Choisis le sujet le plus intéressant, pertinent et récent.
-3. Évite les sujets trop banals.
-4. Utilise uniquement les informations fournies.
-5. Ne fabrique aucune information.
-6. Rédige en français naturel et facile à comprendre.
-7. Commence par un titre accrocheur.
-8. Explique l'information de manière claire et concise.
-9. Utilise un ton journalistique, moderne et naturel.
-10. Ajoute une question intéressante pour encourager les commentaires.
-11. Ajoute quelques hashtags pertinents.
-12. Mentionne la source et son lien.
+FORMAT :
+Titre accrocheur
 
-FORMAT DE LA PUBLICATION :
+Publication courte et informative
 
-Un titre accrocheur.
+Question aux lecteurs
 
-Un texte court, intéressant et informatif.
+Hashtags
 
-Une question destinée aux lecteurs.
+Source : nom et lien
 
-Les hashtags.
+Retourne uniquement la publication finale, sans expliquer ton raisonnement.`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 1200
+            }
+          }),
+          signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS)
+        }
+      );
 
-La source avec son lien.
+      const responseText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Réponse Gemini illisible (HTTP ${response.status}).`);
+      }
 
-IMPORTANT :
-Retourne uniquement la publication finale.
-Ne présente pas tes explications sur la manière dont tu as choisi le sujet.
-N'utilise pas un ton artificiel.
-`
-}]
-}]
-}),
+      if (!response.ok) {
+        const error = new Error(data.error?.message || `Erreur HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
 
-      signal: AbortSignal.timeout(60000)
+      const publication = data.candidates?.[0]?.content?.parts
+        ?.map(part => part.text || "")
+        .join("\n")
+        .trim();
+
+      if (!publication) {
+        const reason = data.candidates?.[0]?.finishReason;
+        throw new Error(`Gemini n'a retourné aucun texte${reason ? ` (raison : ${reason})` : ""}.`);
+      }
+
+      console.log("Publication générée avec succès !");
+      return publication;
+    } catch (error) {
+      console.error(`Échec de la tentative ${attempt} : ${error.message}`);
+
+      if (!isRetryable(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      const delay = attempt * 5000;
+      console.log(`Gemini est temporairement indisponible. Nouvelle tentative dans ${delay / 1000} secondes...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    const error = new Error(
-      data.error?.message || `Erreur HTTP ${response.status}`
-    );
-
-    error.status = response.status;
-    throw error;
   }
 
-  const publication = data.candidates?.[0]?.content?.parts
-    ?.map(part => part.text || "")
-    .join("\n")
-    || "";
-
-  if (!publication.trim()) {
-    throw new Error("Gemini n'a généré aucune publication.");
-  }
-
-  console.log("Publication générée avec succès !");
-
-  return publication.trim();
-
-} catch (error) {
-  console.error(`Échec de la tentative ${attempt} : ${error.message}`);
-
-  const retryable =
-    error.status === 429 ||
-    error.status === 503 ||
-    (error.status >= 500 && error.status <= 599) ||
-    error.name === "TimeoutError" ||
-    error.name === "AbortError";
-
-  if (!retryable || attempt === maxAttempts) {
-    throw error;
-  }
-
-  const delay = attempt * 5000;
-
-  console.log(
-    `Gemini indisponible. Nouvelle tentative dans ${delay / 1000} secondes...`
-  );
-
-  await new Promise(resolve => setTimeout(resolve, delay));
+  throw new Error("Toutes les tentatives Gemini ont échoué.");
 }
 
-}
-
-throw new Error("Toutes les tentatives Gemini ont échoué.");
-}
-
-// Programme principal
 async function main() {
-console.log("======================================");
-console.log("TECHVISION AI AGENT");
-console.log("Démarrage du système...");
-console.log("======================================");
+  console.log("======================================");
+  console.log("TECHVISION AI AGENT");
+  console.log("Démarrage du système...");
+  console.log("======================================");
 
-if (!API_KEY) {
-throw new Error("La clé GEMINI_API_KEY est absente.");
+  if (!API_KEY) {
+    throw new Error("La clé GEMINI_API_KEY est absente. Vérifie les variables d'environnement.");
+  }
+
+  console.log("\nÉtape 1 : Recherche des actualités...");
+  const results = await Promise.all(SOURCES.map(getNews));
+  const uniqueNews = new Map();
+
+  for (const item of results.flat()) {
+    if (!uniqueNews.has(item.link)) uniqueNews.set(item.link, item);
+  }
+
+  const news = [...uniqueNews.values()];
+  if (news.length === 0) {
+    throw new Error("Aucune actualité n'a pu être récupérée. Vérifie les flux RSS et la connexion réseau.");
+  }
+
+  console.log(`\nTotal : ${news.length} actualités récupérées.`);
+  console.log("\nÉtape 2 : Analyse et rédaction par Gemini...");
+  const publication = await generatePublication(news);
+
+  console.log("\nÉtape 3 : Enregistrement de la publication...");
+  fs.writeFileSync("publication.md", `${publication}\n`, "utf8");
+
+  console.log("\n======================================");
+  console.log("PUBLICATION PRÉPARÉE");
+  console.log("======================================\n");
+  console.log(publication);
+  console.log("\n======================================");
+  console.log("SUCCÈS ! Publication enregistrée dans publication.md");
+  console.log("======================================");
 }
 
-// Récupération des actualités
-console.log("\nÉtape 1 : Recherche des actualités...");
-
-const results = await Promise.all(
-SOURCES.map(getNews)
-);
-
-const news = results.flat();
-
-if (news.length === 0) {
-throw new Error("Aucune actualité n'a pu être récupérée.");
-}
-
-console.log("\nTotal : ${news.length} actualités récupérées.");
-
-// Génération par l'intelligence artificielle
-console.log("\nÉtape 2 : Analyse et rédaction par Gemini...");
-
-const publication = await generatePublication(news);
-
-if (!publication) {
-throw new Error("La publication générée est vide.");
-}
-
-// Enregistrement du résultat
-console.log("\nÉtape 3 : Enregistrement de la publication...");
-
-fs.writeFileSync(
-"publication.md",
-publication + "\n",
-"utf8"
-);
-
-// Affichage final
-console.log("\n======================================");
-console.log("PUBLICATION PRÉPARÉE");
-console.log("======================================\n");
-
-console.log(publication);
-
-console.log("\n======================================");
-console.log("SUCCÈS !");
-console.log("Publication enregistrée dans publication.md");
-console.log("======================================");
-}
-
-// Lancement du programme
 main().catch(error => {
-console.error("\n======================================");
-console.error("ÉCHEC DE TECHVISION AI AGENT");
-console.error("======================================");
-console.error(error.message);
-
-process.exitCode = 1;
+  console.error("\n======================================");
+  console.error("ÉCHEC DE TECHVISION AI AGENT");
+  console.error("======================================");
+  console.error(error.message);
+  process.exitCode = 1;
 });
