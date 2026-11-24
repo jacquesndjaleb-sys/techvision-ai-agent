@@ -20,7 +20,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Lancer l'agent IA
-        run: |
-          echo "TechVision AI Agent démarré"
-          echo "La programmation de l'agent sera installée prochainement."
+      - name: Exécuter TechVision AI Agent
+        run: node index.js
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-2.5-flash
