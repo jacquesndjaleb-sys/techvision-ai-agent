@@ -107,15 +107,25 @@ async function generatePublication(news) {
 ACTUALITÉS DISPONIBLES :
 ${JSON.stringify(news, null, 2)}
 
+RÈGLES STRICTES DE FIABILITÉ :
+1. Utilise exclusivement les faits explicitement présents dans les titres et descriptions des actualités fournies.
+2. N'ajoute jamais de détails issus de ta mémoire, de suppositions ou d'une autre actualité.
+3. N'invente aucun événement, date, chiffre, pourcentage, nom, citation, scandale, relation personnelle, accusation, décision politique ou lien de causalité.
+4. Ne transforme jamais une hypothèse, une rumeur ou une accusation en fait établi.
+5. Ne dis pas qu'une personne a démissionné, été réintégrée ou est impliquée dans une affaire si ces faits ne sont pas explicitement présents dans les données fournies.
+6. Choisis une seule actualité et conserve son lien exact. Ne mélange jamais plusieurs articles.
+7. Avant de répondre, vérifie que chaque phrase factuelle est justifiée par les données fournies. Supprime toute phrase qui ne l'est pas.
+8. Si les informations sont insuffisantes, contradictoires ou invraisemblables, ne rédige pas d'article affirmatif. Retourne exactement : "PUBLICATION BLOQUÉE : informations insuffisantes ou à vérifier auprès de la source."
+
 MISSION :
-1. Analyse les actualités et choisis un sujet intéressant et récent.
-2. Appuie-toi uniquement sur les informations fournies. N'invente aucun fait.
+1. Choisis une actualité intéressante parmi les informations fournies.
+2. Résume-la fidèlement, sans extrapolation.
 3. Rédige en français naturel, clair et facile à comprendre.
-4. Commence par un titre accrocheur.
+4. Commence par un titre accrocheur mais fidèle aux faits.
 5. Explique l'information de manière concise, avec un ton journalistique.
-6. Termine par une question pertinente pour les lecteurs.
+6. Termine par une question pertinente qui ne suppose aucun fait non confirmé.
 7. Ajoute quelques hashtags adaptés.
-8. Indique la source et son lien exact.
+8. Indique uniquement la source et le lien exacts de l'actualité choisie.
 
 FORMAT :
 Titre accrocheur
