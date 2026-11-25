@@ -25,6 +25,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: gemini-3.1-flash-lite
+          GEMINI_FALLBACK_MODEL: gemini-3.5-flash-lite
           FACEBOOK_AUTO_PUBLISH: ${{ secrets.FACEBOOK_AUTO_PUBLISH }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
