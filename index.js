@@ -85,25 +85,29 @@ function isRetryable(error) {
 }
 
 async function generatePublication(news) {
-  const maxAttempts = 3;
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash-lite";
+  const models = [...new Set([MODEL, fallbackModel])];
+  const attemptsPerModel = 2;
+  let lastError;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      console.log(`Tentative Gemini ${attempt}/${maxAttempts}...`);
+  for (const model of models) {
+    for (let attempt = 1; attempt <= attemptsPerModel; attempt++) {
+      try {
+        console.log(`Tentative Gemini ${attempt}/${attemptsPerModel} avec le modèle ${model}...`);
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": API_KEY
-          },
-          body: JSON.stringify({
-            contents: [{
-              role: "user",
-              parts: [{
-                text: `Tu es le rédacteur en chef d'une page Facebook spécialisée dans la technologie, l'informatique, l'intelligence artificielle et les innovations numériques.
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": API_KEY
+            },
+            body: JSON.stringify({
+              contents: [{
+                role: "user",
+                parts: [{
+                  text: `Tu es le rédacteur en chef d'une page Facebook spécialisée dans la technologie, l'informatique, l'intelligence artificielle et les innovations numériques.
 
 ACTUALITÉS DISPONIBLES :
 ${JSON.stringify(news, null, 2)}
@@ -140,57 +144,63 @@ Hashtags
 Source : nom et lien
 
 Retourne uniquement la publication finale, sans expliquer ton raisonnement.`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 1200
-            }
-          }),
-          signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS)
+                }]
+              }],
+              generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 1200
+              }
+            }),
+            signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS)
+          }
+        );
+
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error(`Réponse Gemini illisible (HTTP ${response.status}).`);
         }
-      );
 
-      const responseText = await response.text();
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        throw new Error(`Réponse Gemini illisible (HTTP ${response.status}).`);
+        if (!response.ok) {
+          const error = new Error(data.error?.message || `Erreur HTTP ${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+
+        const publication = data.candidates?.[0]?.content?.parts
+          ?.map(part => part.text || "")
+          .join("\\n")
+          .trim();
+
+        if (!publication) {
+          const reason = data.candidates?.[0]?.finishReason;
+          throw new Error(`Gemini n'a retourné aucun texte${reason ? ` (raison : ${reason})` : ""}.`);
+        }
+
+        console.log(`Publication générée avec succès par ${model} !`);
+        return publication;
+      } catch (error) {
+        lastError = error;
+        console.error(`Échec avec ${model}, tentative ${attempt} : ${error.message}`);
+
+        if (!isRetryable(error)) {
+          throw error;
+        }
+
+        if (attempt < attemptsPerModel) {
+          const delay = attempt * 5000;
+          console.log(`Service Gemini temporairement indisponible. Nouvelle tentative dans ${delay / 1000} secondes...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else if (model !== models[models.length - 1]) {
+          console.log(`Le modèle ${model} reste indisponible. Basculement vers le modèle de secours : ${fallbackModel}.`);
+        }
       }
-
-      if (!response.ok) {
-        const error = new Error(data.error?.message || `Erreur HTTP ${response.status}`);
-        error.status = response.status;
-        throw error;
-      }
-
-      const publication = data.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || "")
-        .join("\n")
-        .trim();
-
-      if (!publication) {
-        const reason = data.candidates?.[0]?.finishReason;
-        throw new Error(`Gemini n'a retourné aucun texte${reason ? ` (raison : ${reason})` : ""}.`);
-      }
-
-      console.log("Publication générée avec succès !");
-      return publication;
-    } catch (error) {
-      console.error(`Échec de la tentative ${attempt} : ${error.message}`);
-
-      if (!isRetryable(error) || attempt === maxAttempts) {
-        throw error;
-      }
-
-      const delay = attempt * 5000;
-      console.log(`Gemini est temporairement indisponible. Nouvelle tentative dans ${delay / 1000} secondes...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 
-  throw new Error("Toutes les tentatives Gemini ont échoué.");
+  throw new Error(`Tous les modèles Gemini sont temporairement indisponibles. Dernière erreur : ${lastError?.message || "inconnue"}`);
 }
 
 async function publishToFacebook(publication) {
