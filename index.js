@@ -112,15 +112,28 @@ async function generatePublication(news) {
 ACTUALITÉS DISPONIBLES :
 ${JSON.stringify(news, null, 2)}
 
-RÈGLES STRICTES DE FIABILITÉ :
-1. Utilise exclusivement les faits explicitement présents dans les titres et descriptions des actualités fournies.
-2. N'ajoute jamais de détails issus de ta mémoire, de suppositions ou d'une autre actualité.
-3. N'invente aucun événement, date, chiffre, pourcentage, nom, citation, scandale, relation personnelle, accusation, décision politique ou lien de causalité.
-4. Ne transforme jamais une hypothèse, une rumeur ou une accusation en fait établi.
-5. Ne dis pas qu'une personne a démissionné, été réintégrée ou est impliquée dans une affaire si ces faits ne sont pas explicitement présents dans les données fournies.
-6. Choisis une seule actualité et conserve son lien exact. Ne mélange jamais plusieurs articles.
-7. Avant de répondre, vérifie que chaque phrase factuelle est justifiée par les données fournies. Supprime toute phrase qui ne l'est pas.
-8. Si les informations sont insuffisantes, contradictoires ou invraisemblables, ne rédige pas d'article affirmatif. Retourne exactement : "PUBLICATION BLOQUÉE : informations insuffisantes ou à vérifier auprès de la source."
+RÈGLES DE FIABILITÉ ET DE VÉRIFICATION :
+1. Utilise exclusivement les faits explicitement présents dans le titre et la description de l'article choisi. Les autres articles ne servent pas à compléter celui-ci.
+2. N'utilise aucune connaissance extérieure, aucun souvenir, aucune supposition et aucune déduction présentée comme un fait.
+3. N'invente jamais de date, chiffre, statistique, citation, nom, fonction, événement, conséquence, cause, accusation ou réaction.
+4. Respecte le degré de certitude de la source : une possibilité reste une possibilité, une annonce reste une annonce et une accusation ne devient jamais un fait établi.
+5. Si le titre et la description se contredisent, si le sujet est confus ou si les informations sont trop minces pour rédiger sans extrapoler, retourne exactement : "PUBLICATION BLOQUÉE : informations insuffisantes ou à vérifier auprès de la source."
+6. Choisis un seul article. Ne fusionne pas plusieurs actualités, même si elles concernent la même entreprise ou personne.
+7. La source finale doit correspondre exactement à l'article choisi. Reprends son URL sans la modifier.
+8. N'affirme pas avoir vérifié l'article complet : tu disposes uniquement des champs RSS fournis.
+9. Avant de finaliser, contrôle chaque phrase factuelle. Si elle n'est pas directement soutenue par le titre ou la description de l'article choisi, supprime-la ou bloque la publication.
+
+RÈGLES DE QUALITÉ ÉDITORIALE :
+1. Adopte un ton journalistique neutre, précis, professionnel et accessible au grand public.
+2. Le titre doit résumer l'information centrale sans exagération, dramatisation, promesse trompeuse ni formule de type "incroyable", "choc", "révolution" ou "scandale", sauf si ce terme est explicitement justifié par la source.
+3. Ne transforme pas un simple lancement, une mise à jour ou une déclaration en "révolution" ou en changement majeur.
+4. Commence par l'information essentielle : qui ou quoi est concerné, et ce qui est annoncé ou constaté, uniquement si ces éléments figurent dans la source.
+5. Explique pourquoi l'information est pertinente seulement lorsque la source permet de le dire. N'invente pas d'impact sur les utilisateurs, les entreprises ou le marché.
+6. Évite les répétitions entre le titre et le corps du texte. Chaque paragraphe doit apporter une information distincte.
+7. Privilégie des phrases courtes et naturelles. Évite le remplissage, les généralités et les formulations artificiellement enthousiastes.
+8. Ne donne pas de conseil technique, financier ou de sécurité qui ne figure pas dans la source.
+9. Termine par une question simple et pertinente, sans orienter la réponse ni présupposer une conséquence.
+10. Utilise au maximum 3 à 5 hashtags précis. N'ajoute pas de hashtags sensationnalistes ou sans rapport.
 
 MISSION :
 1. Choisis une actualité intéressante parmi les informations fournies.
@@ -147,7 +160,7 @@ Retourne uniquement la publication finale, sans expliquer ton raisonnement.`
                 }]
               }],
               generationConfig: {
-                temperature: 0.7,
+                temperature: 0.35,
                 maxOutputTokens: 1200
               }
             }),
