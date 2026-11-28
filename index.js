@@ -399,13 +399,26 @@ async function askGemini(prompt, articleCount) {
       try {
         console.log(`Tentative Gemini ${attempt}/${attemptsPerModel} avec le modèle ${model}...`);
 
+        const retryInstruction = attempt > 1
+          ? `
+
+CORRECTION OBLIGATOIRE : ta réponse précédente était incomplète.
+Retourne maintenant un objet JSON complet avec EXACTEMENT ces clés :
+blocked, reason, article_id, title, body, question, hashtags.
+Pour une publication normale, blocked doit être false et body doit contenir le texte complet (2 à 4 phrases).
+Ne laisse aucun champ absent, null ou vide, sauf reason qui peut être une chaîne vide.
+Exemple de structure :
+{"blocked":false,"reason":"","article_id":0,"title":"Titre fidèle","body":"Texte complet de la publication.","question":"Qu'en pensez-vous ?","hashtags":["#Tech","#IA","#Innovation"]}
+Ne retourne aucun commentaire ni bloc Markdown.`
+          : "";
+
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-goog-api-key": API_KEY },
             body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: prompt }] }],
+              contents: [{ role: "user", parts: [{ text: prompt + retryInstruction }] }],
               generationConfig: {
                 temperature: 0.35,
                 maxOutputTokens: 2048,
@@ -482,8 +495,12 @@ function validateResult(result, articleCount) {
     fail("article_id hors limites.");
   }
   for (const field of ["title", "body", "question"]) {
-    if (typeof result[field] !== "string" || !result[field].trim()) fail(`champ "${field}" manquant.`);
+    if (typeof result[field] !== "string" || !result[field].trim()) {
+      const receivedKeys = Object.keys(result).join(", ") || "aucune";
+      fail(`champ "${field}" manquant (champs reçus : ${receivedKeys}).`);
+    }
   }
+  if (!Array.isArray(result.hashtags)) fail("hashtags doit être un tableau.");
 }
 
 function formatHashtags(hashtags = []) {
