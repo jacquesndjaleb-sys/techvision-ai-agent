@@ -17,7 +17,7 @@ const GEMINI_TIMEOUT_MS = 60000;
 const IMAGE_TIMEOUT_MS = 25000;
 
 const MAX_NEWS_PER_SOURCE = 6;
-const MAX_NEWS_TOTAL = 60;
+const MAX_NEWS_TOTAL = 84;
 const MAX_ARTICLE_AGE_HOURS = Number(process.env.MAX_ARTICLE_AGE_HOURS) || 72;
 const MAX_DESCRIPTION_CHARS = 350;
 
@@ -43,7 +43,10 @@ const SOURCES = [
   { name: "Numerama", url: "https://www.numerama.com/feed/" },
   { name: "Korben", url: "https://korben.info/feed" },
   { name: "Frandroid", url: "https://www.frandroid.com/feed" },
-  { name: "TechCabal", url: "https://techcabal.com/feed/" }
+  { name: "TechCabal", url: "https://techcabal.com/feed/" },
+  { name: "NASA Science", url: "https://science.nasa.gov/feed/" },
+  { name: "Space.com", url: "https://www.space.com/feeds.xml" },
+  { name: "European Southern Observatory", url: "https://www.eso.org/public/blog/feed/" }
 ];
 
 // ---------------------------------------------------------------------------
@@ -348,7 +351,7 @@ function buildPrompt(articles, recentSources) {
     image_disponible: Boolean(article.feedImage)
   }));
 
-  return `Tu es le rédacteur en chef d'une page Facebook spécialisée dans la technologie, l'informatique, l'intelligence artificielle et les innovations numériques. Les lecteurs sont francophones.
+  return `Tu es le rédacteur en chef d'une page Facebook francophone consacrée à la technologie, l'informatique, l'intelligence artificielle, les sciences et les grandes découvertes sur le monde et l'Univers. Couvre aussi bien les innovations numériques que l'astronomie, les galaxies, les étoiles, les exoplanètes, les planètes, les astéroïdes, les comètes, les missions spatiales, la Terre, les océans, le climat, la physique, la biologie et les découvertes scientifiques.
 
 ACTUALITÉS DISPONIBLES (JSON) :
 ${JSON.stringify(list, null, 2)}
@@ -368,7 +371,7 @@ RÈGLES DE FIABILITÉ :
 RÈGLES ÉDITORIALES :
 1. Écris en français naturel et clair, même si l'article est en anglais. Conserve les noms propres et les noms de produits.
 2. Ton journalistique neutre, précis et accessible. Pas d'exagération ni de mots comme "incroyable", "choc", "révolution" ou "scandale" sauf si la source les justifie.
-3. À qualité égale, préfère un article dont image_disponible vaut true, et une source différente de celles des dernières publications.
+3. À qualité égale, préfère un article dont image_disponible vaut true, et une source différente de celles des dernières publications. Ne privilégie pas systématiquement la technologie : alterne réellement entre actualités technologiques, découvertes scientifiques, astronomie et exploration spatiale. Les découvertes sur les galaxies, astéroïdes, comètes, exoplanètes et phénomènes naturels sont des sujets importants.
 4. title : une phrase accrocheuse mais fidèle, 100 caractères maximum, sans émoji.
 5. body : 2 à 4 phrases courtes (environ 250 à 600 caractères) qui commencent par l'information essentielle. N'invente aucun impact. N'inclus ni hashtag, ni lien, ni nom de source.
 6. question : une question simple pour les lecteurs, sans présupposer de fait non confirmé.
