@@ -306,7 +306,7 @@ async function resolveImage(article) {
     }
   }
 
-  console.log("Aucune image exploitable : la publication sera envoyée avec l'aperçu du lien.");
+  console.log("Aucune image exploitable : la publication sera envoyée sans image et sans lien.");
   return null;
 }
 
@@ -518,7 +518,7 @@ function buildPost(result, article) {
     result.body.trim(),
     result.question.trim(),
     formatHashtags(result.hashtags),
-    `Source : ${article.source} — ${article.link}`
+    `Source : ${article.source}`
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -580,11 +580,11 @@ async function publishToFacebook(post, article, image) {
     }
   }
 
-  const body = new URLSearchParams({ message: post, link: article.link, access_token: token });
+  const body = new URLSearchParams({ message: post, access_token: token });
   const data = await facebookRequest(`${encodeURIComponent(pageId)}/feed`, body);
   if (!data.id) throw new Error("Facebook n'a pas confirmé la création de la publication.");
 
-  console.log(`Publication avec aperçu du lien envoyée sur Facebook. Identifiant : ${data.id}`);
+  console.log(`Publication sans image et sans lien envoyée sur Facebook. Identifiant : ${data.id}`);
   return data.id;
 }
 
