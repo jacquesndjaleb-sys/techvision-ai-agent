@@ -240,7 +240,12 @@ function saveHistory(history) {
 }
 
 function normalizeTitle(title) {
-  return title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return title
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
 // Classe les sujets pour suivre la diversité éditoriale dans l'historique.
