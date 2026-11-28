@@ -1,0 +1,14 @@
+{
+  "name": "techvision-ai-agent",
+  "version": "2.0.0",
+  "description": "Agent qui lit l'actualité tech, rédige une publication avec Gemini et la publie avec une image sur la page Facebook TechVision.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "private": true,
+  "license": "UNLICENSED"
+}
