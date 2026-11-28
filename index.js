@@ -335,7 +335,7 @@ const RESPONSE_SCHEMA = {
     question: { type: "STRING" },
     hashtags: { type: "ARRAY", items: { type: "STRING" } }
   },
-  required: ["blocked"]
+  required: ["blocked", "reason", "article_id", "title", "body", "question", "hashtags"]
 };
 
 function buildPrompt(articles, recentSources) {
@@ -361,7 +361,7 @@ RÈGLES DE FIABILITÉ :
 2. N'utilise aucune connaissance extérieure, aucune supposition et aucune déduction présentée comme un fait.
 3. N'invente jamais de date, chiffre, statistique, citation, nom, fonction, événement, conséquence, cause, accusation ou réaction.
 4. Respecte le degré de certitude de la source : une possibilité reste une possibilité, une annonce reste une annonce, une accusation n'est jamais un fait établi.
-5. Si le sujet est confus, contradictoire ou trop mince pour rédiger sans extrapoler, réponds avec blocked = true et explique brièvement pourquoi dans reason.
+5. Si le sujet est confus, contradictoire ou trop mince pour rédiger sans extrapoler, réponds avec blocked = true et explique brièvement pourquoi dans reason. Dans ce cas, renseigne aussi article_id avec 0, title, body et question avec des chaînes vides, et hashtags avec un tableau vide. Si tu rédiges une publication, réponds avec blocked = false et renseigne tous les autres champs.
 6. Choisis un seul article et ne fusionne jamais plusieurs actualités.
 7. N'affirme pas avoir lu l'article complet : tu ne disposes que du titre et de la description.
 
