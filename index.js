@@ -243,6 +243,22 @@ function normalizeTitle(title) {
   return title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
+// Classe les sujets pour suivre la diversité éditoriale dans l'historique.
+function classifyCategory(article) {
+  const text = normalizeTitle(String(article.title || "") + " " + String(article.description || ""));
+  if (/cybersecurite|piratage|hacker|rancongiciel|ransomware|phishing|donnees personnelles|faille de securite|malware/.test(text)) return "cybersecurite";
+  if (/galaxie|etoile|exoplanete|asteroide|comete|trou noir|nebuleuse|voie lactee|supernova|cosmologie|univers observable/.test(text)) return "astronomie";
+  if (/nasa|esa |mission spatiale|sonde spatiale|fusee|lune|mars|satellite|orbite|exploration spatiale|station spatiale/.test(text)) return "espace";
+  if (/decouverte scientifique|physique|biologie|genetique|cellule|fossile|climat|ocean|medecine|recherche scientifique|scientifique/.test(text)) return "sciences";
+  return "technologie";
+}
+
+// Domaines institutionnels utilisés comme sources scientifiques primaires.
+function isPrimaryScientificSource(url) {
+  const host = String(url || "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
+  return /(^|\.)((science\.)?nasa\.gov|nasa\.gov|esa\.int|eso\.org|noaa\.gov|usgs\.gov|cern\.ch)$/.test(host);
+}
+
 // ---------------------------------------------------------------------------
 // Images
 // ---------------------------------------------------------------------------
@@ -341,13 +357,15 @@ const RESPONSE_SCHEMA = {
   required: ["blocked", "reason", "article_id", "title", "body", "question", "hashtags"]
 };
 
-function buildPrompt(articles, recentSources) {
+function buildPrompt(articles, recentSources, recentCategories) {
   const list = articles.map((article, id) => ({
     id,
     source: article.source,
     title: article.title,
     description: article.description,
     date: article.date,
+    categorie: classifyCategory(article),
+    source_scientifique_officielle: isPrimaryScientificSource(article.link),
     image_disponible: Boolean(article.feedImage)
   }));
 
@@ -359,9 +377,15 @@ ${JSON.stringify(list, null, 2)}
 SOURCES UTILISÉES POUR LES DERNIÈRES PUBLICATIONS (à varier si l'intérêt est comparable) :
 ${recentSources.length ? recentSources.join(", ") : "aucune"}
 
-RÈGLES DE FIABILITÉ :
-1. Utilise exclusivement les faits explicitement présents dans le titre et la description de l'article choisi. Les autres articles ne servent pas à le compléter.
-2. N'utilise aucune connaissance extérieure, aucune supposition et aucune déduction présentée comme un fait.
+CATÉGORIES DES DERNIÈRES PUBLICATIONS :
+${recentCategories.length ? recentCategories.join(", ") : "aucune"}
+
+RÈGLES DE FIABILITÉ ET DE VÉRIFICATION :
+1. Utilise exclusivement les faits explicitement présents dans le titre et la description de l'article choisi. Les autres articles ne servent qu'à vérifier si le même fait est rapporté indépendamment.
+2. Pour une actualité scientifique, astronomique ou spatiale, privilégie une source scientifique officielle (NASA, ESA, ESO, NOAA, USGS, CERN ou organisme de recherche reconnu).
+3. Si la source est un média secondaire, ne présente pas une découverte ou un résultat scientifique comme confirmé à moins qu'un autre article provenant d'une source indépendante dans la liste ne rapporte le même fait. Si aucun recoupement clair n'est disponible, bloque la publication et explique que la confirmation manque.
+4. Un article qui reprend manifestement la même dépêche ou le même communiqué ne constitue pas un recoupement indépendant.
+5. N'utilise aucune connaissance extérieure, aucune supposition et aucune déduction présentée comme un fait.
 3. N'invente jamais de date, chiffre, statistique, citation, nom, fonction, événement, conséquence, cause, accusation ou réaction.
 4. Respecte le degré de certitude de la source : une possibilité reste une possibilité, une annonce reste une annonce, une accusation n'est jamais un fait établi.
 5. Si le sujet est confus, contradictoire ou trop mince pour rédiger sans extrapoler, réponds avec blocked = true et explique brièvement pourquoi dans reason. Dans ce cas, renseigne aussi article_id avec 0, title, body et question avec des chaînes vides, et hashtags avec un tableau vide. Si tu rédiges une publication, réponds avec blocked = false et renseigne tous les autres champs.
@@ -371,7 +395,7 @@ RÈGLES DE FIABILITÉ :
 RÈGLES ÉDITORIALES :
 1. Écris en français naturel et clair, même si l'article est en anglais. Conserve les noms propres et les noms de produits.
 2. Ton journalistique neutre, précis et accessible. Pas d'exagération ni de mots comme "incroyable", "choc", "révolution" ou "scandale" sauf si la source les justifie.
-3. À qualité égale, préfère un article dont image_disponible vaut true, et une source différente de celles des dernières publications. Ne privilégie pas systématiquement la technologie : alterne réellement entre actualités technologiques, découvertes scientifiques, astronomie et exploration spatiale. Les découvertes sur les galaxies, astéroïdes, comètes, exoplanètes et phénomènes naturels sont des sujets importants.
+3. À qualité égale, préfère un article dont image_disponible vaut true, et une source différente de celles des dernières publications. Évite de choisir la même categorie que les deux dernières publications si une actualité d'une autre catégorie présente un intérêt comparable. Fais tourner réellement les catégories technologie, cybersecurite, sciences, astronomie et espace. Ne force jamais une catégorie si les articles disponibles sont moins pertinents ou moins fiables.
 4. title : une phrase accrocheuse mais fidèle, 100 caractères maximum, sans émoji.
 5. body : 2 à 4 phrases courtes (environ 250 à 600 caractères) qui commencent par l'information essentielle. N'invente aucun impact. N'inclus ni hashtag, ni lien, ni nom de source.
 6. question : une question simple pour les lecteurs, sans présupposer de fait non confirmé.
@@ -699,8 +723,10 @@ async function main() {
   console.log(`${articles.length} actualités nouvelles envoyées à Gemini.`);
 
   console.log("\nÉtape 2 : Choix et rédaction par Gemini...");
-  const recentSources = history.slice(-5).map(entry => entry.source).filter(Boolean);
-  const result = await askGemini(buildPrompt(articles, recentSources), articles.length);
+  const recentEntries = history.slice(-5);
+  const recentSources = recentEntries.map(entry => entry.source).filter(Boolean);
+  const recentCategories = recentEntries.map(entry => entry.category || classifyCategory({ title: entry.title || "" }));
+  const result = await askGemini(buildPrompt(articles, recentSources, recentCategories), articles.length);
 
   if (result.blocked) {
     const message = `PUBLICATION BLOQUÉE : informations insuffisantes ou à vérifier auprès de la source.${
@@ -728,6 +754,7 @@ async function main() {
     link: article.link,
     title: article.title,
     source: article.source,
+    category: classifyCategory(article),
     date: new Date().toISOString(),
     published: Boolean(facebookId)
   });
